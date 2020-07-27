@@ -13,7 +13,17 @@
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
   </properties>
-  
+
+<!--   
+  <repositories>
+    <repository>
+      <id>jsi.sourceforge.net</id>
+      <name>sourceforge jsi repository</name>
+      <url>http://sourceforge.net/projects/jsi/files/m2_repo</url>
+    </repository>
+  </repositories>
+ -->
+   
   <build>
     <plugins>
       <plugin>
@@ -50,5 +60,13 @@
       <artifactId>tesseract-platform</artifactId>
       <version>4.1.0-1.5.1</version>
     </dependency>
-    </dependencies>
+
+<!-- 
+    <dependency>
+      <groupId>net.sourceforge.jsi</groupId>
+      <artifactId>jsi</artifactId>
+      <version>1.0.0</version>
+    </dependency>
+ -->        
+  </dependencies>
 </project>
