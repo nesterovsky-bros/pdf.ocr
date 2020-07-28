@@ -1,11 +1,21 @@
 package nesterovskyBros.pdf.ocr;
 
+import java.awt.color.ColorSpace;
+import java.awt.image.BufferedImage;
+import java.awt.image.ColorConvertOp;
+import java.awt.image.ConvolveOp;
+import java.awt.image.FilteredImageSource;
+import java.awt.image.Kernel;
+import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.List;
+
+import javax.imageio.ImageIO;
+import javax.swing.GrayFilter;
 
 import org.bytedeco.javacpp.BytePointer;
 import org.bytedeco.leptonica.PIX;
@@ -20,9 +30,62 @@ public class App2
     String[] images = 
     { 
       "C:\\temp\\images\\cheque1.jpg", 
-      "C:\\temp\\images\\cheque2.jpg" 
+      //"C:\\temp\\images\\cheque2.jpg" 
     };
+    
+    for(String path: images)
+    {
+      File file = new File(path);
+      String name = file.getName();
+      File folder = file.getParentFile();
+      BufferedImage image = ImageIO.read(file);
+      
+      BufferedImage grayImage = new BufferedImage(
+        image.getWidth(), 
+        image.getHeight(), 
+        BufferedImage.TYPE_INT_ARGB);
 
+      ColorConvertOp op = 
+        new ColorConvertOp(ColorSpace.getInstance(ColorSpace.CS_GRAY), null);
+
+      op.filter(image, grayImage);
+      
+      ImageIO.write(
+        grayImage, 
+        "png",
+        new File(
+          folder, 
+          "gray-" + name.substring(0, name.lastIndexOf('.')) + ".png"));
+      
+      int radius = 10;
+      int size = radius * 2 + 1;
+      float weight = 1.0f / (size * size);
+      float[] data = new float[size * size];
+
+      for(int i = 0; i < data.length; i++)
+      {
+          data[i] = weight;
+      }
+      
+      Kernel kernel = new Kernel(size, size, data);
+      ConvolveOp operation = 
+        new ConvolveOp(kernel, ConvolveOp.EDGE_ZERO_FILL, null);
+
+      BufferedImage bluredImage = operation.filter(grayImage, null);      
+
+      ImageIO.write(
+        bluredImage, 
+        "png",
+        new File(
+          folder, 
+          "blured-" + name.substring(0, name.lastIndexOf('.')) + ".png"));
+    }
+
+    if (true)
+    {
+      return;
+    }
+    
     String base = "C:\\projects\\git\\pdf-ocr\\";
     
     try(TessBaseAPI api = new TessBaseAPI())
