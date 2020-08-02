@@ -1,16 +1,12 @@
 package nesterovskyBros.pdf.ocr;
 
-import java.awt.Image;
-import java.awt.Toolkit;
 import java.awt.color.ColorSpace;
+import java.awt.geom.AffineTransform;
+import java.awt.image.AffineTransformOp;
 import java.awt.image.BufferedImage;
-import java.awt.image.BufferedImageFilter;
 import java.awt.image.ColorConvertOp;
-import java.awt.image.ConvolveOp;
 import java.awt.image.FilteredImageSource;
 import java.awt.image.ImageFilter;
-import java.awt.image.ImageProducer;
-import java.awt.image.Kernel;
 import java.awt.image.PixelGrabber;
 import java.awt.image.RGBImageFilter;
 import java.awt.image.RenderedImage;
@@ -52,149 +48,266 @@ public class App2
     {
       String path= images[index];
       File file = new File(path);
-      String name = file.getName();
-      File folder = file.getParentFile();
+      File folder = new File(path.substring(0, path.lastIndexOf('.')));
+      
+      folder.mkdirs();
+      
       BufferedImage image = ImageIO.read(file);
+      int imageWidth = image.getWidth();
+      int imageHeight = image.getHeight();
+      double scale = 1600.0 / imageWidth;
+      int width = 1600;
+      int height = (int)(imageHeight * scale);
+      
+      BufferedImage scaledImage = 
+        new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+      AffineTransform affineTransform = new AffineTransform();
+      
+      affineTransform.scale(scale, scale);
+      
+      AffineTransformOp scaleOp = 
+       new AffineTransformOp(affineTransform, AffineTransformOp.TYPE_BICUBIC);
+      scaleOp.filter(image, scaledImage);
+      
+      saveImage(
+        scaledImage, 
+        "png", 
+        new File(folder, "scaled.png"), 
+        225);
       
       BufferedImage grayImage = new BufferedImage(
-        image.getWidth(), 
-        image.getHeight(), 
+        width, 
+        height, 
         BufferedImage.TYPE_INT_ARGB);
 
       ColorConvertOp op = 
         new ColorConvertOp(ColorSpace.getInstance(ColorSpace.CS_GRAY), null);
 
-      op.filter(image, grayImage);
+      op.filter(scaledImage, grayImage);
       
-      ImageIO.write(
+      saveImage(
         grayImage, 
-        "png",
-        new File(
-          folder, 
-          "gray-" + name.substring(0, name.lastIndexOf('.')) + ".png"));
+        "png", 
+        new File(folder, "gray.png"), 
+        225);
       
-      int radius = 5;
-      int size = radius * 2 + 1;
-      float weight = 1.0f / (size * size);
-      float[] data = new float[size * size];
+//      BufferedImage blur2Image;
+//      
+//      {
+//        int radius = 2;
+//        int size = radius * 2 + 1;
+//        float weight = 1.0f / (size * size);
+//        float[] data = new float[size * size];
+//  
+//        for(int i = 0; i < data.length; i++)
+//        {
+//          data[i] = weight;
+//        }
+//        
+//        Kernel kernel = new Kernel(size, size, data);
+//        ConvolveOp operation = 
+//          new ConvolveOp(kernel, ConvolveOp.EDGE_ZERO_FILL, null);
+//  
+//        blur2Image = operation.filter(grayImage, null);
+//        
+//        saveImage(
+//          blur2Image, 
+//          "png", 
+//          new File(folder, "blur2.png"), 
+//          225);
+//      }      
+      
+//      BufferedImage blur4Image;
+//      
+//      {
+//        int radius = 3;
+//        int size = radius * 2 + 1;
+//        float weight = 1.0f / (size * size);
+//        float[] data = new float[size * size];
+//  
+//        for(int i = 0; i < data.length; i++)
+//        {
+//          data[i] = weight;
+//        }
+//        
+//        Kernel kernel = new Kernel(size, size, data);
+//        ConvolveOp operation = 
+//          new ConvolveOp(kernel, ConvolveOp.EDGE_NO_OP, null);
+//  
+//        blur4Image = operation.filter(grayImage, null);
+//        
+//        saveImage(
+//          blur4Image, 
+//          "png", 
+//          new File(folder, "blur4.png"), 
+//          225);
+//      }
+      
+      BufferedImage filterImage = grayImage;
 
-      for(int i = 0; i < data.length; i++)
+      // Histogram normalization.
+      double backgroundPercent = .92;
+      int count = width * height;
+      int backgroundSize =  (int)(count * backgroundPercent);
+      int[] histogram = new int[256];
+      int[] pixels = new int[width];
+
+      // Read pixel intensities into histogram.
+      for(int y = 0; y < height; y++) 
       {
-          data[i] = weight;
+        filterImage.getRGB(0, y, width, 1, pixels, 0, width);
+        
+        for(int pixel: pixels)
+        {
+          ++histogram[pixel & 0xff];
+        }
       }
       
-      Kernel kernel = new Kernel(size, size, data);
-      ConvolveOp operation = 
-        new ConvolveOp(kernel, ConvolveOp.EDGE_ZERO_FILL, null);
-
-      BufferedImage bluredImage = operation.filter(grayImage, null);
-
-      ImageIO.write(
-        bluredImage, 
-        "png",
-        new File(
-          folder, 
-          "blured-" + name.substring(0, name.lastIndexOf('.')) + ".png"));
+      int histogramMax = 0;
+      int c = histogram[0];
       
+      for(int i = 1; i < 256; ++i)
+      {
+        int ic = histogram[i];
+        
+        if (c < ic)
+        {
+          c = ic;
+          histogramMax = i;
+        }
+      }
+      
+      int backgroundRange = 1;
+      int histogramBackgroundSize = histogram[histogramMax];
+      
+      for(int i = 1; i < 256; ++i)
+      {
+        int size = histogramBackgroundSize;
+        boolean hasRange = false;
+        
+        if (histogramMax + i < 256)
+        {
+          hasRange = true;
+          size += histogram[histogramMax + i];
+        }
+
+        if (histogramMax - i >= 0)
+        {
+          hasRange = true;
+          size += histogram[histogramMax - i];
+        }
+        
+        if (!hasRange || (size > backgroundSize))
+        {
+          break;
+        }
+        
+        ++backgroundRange;
+        histogramBackgroundSize = size;
+      }
+
+//      long sum =0;
+//      // build a Lookup table LUT containing scale factor
+//      int[] lut = new int[256];
+//      
+//      for(int i = 0; i < 256; ++i )
+//      {
+//        sum += histogram[i];
+//        lut[i] = (int)(sum * 255.0f / count);
+//      }
+//
+//      // transform image using sum histogram as a Lookup table
+//      for(int y = 0; y < height; y++) 
+//      {
+//        grayImage.getRGB(0, y, width, 1, pixels, 0, width);
+//        
+//        for(int i = 0; i < pixels.length; ++i)
+//        {
+//          int before = pixels[i] & 0xff;
+//          int after = lut[before];
+//          
+//          pixels[i] = 0xff000000 | after | (after << 8) | (after << 16);
+//        }
+//
+//        grayImage.setRGB(0, y, width, 1, pixels, 0, width);
+//      }
+//
+//      ImageIO.write(
+//        grayImage, 
+//        "png",
+//        new File(
+//          folder, 
+//          "normalized-" + name.substring(0, name.lastIndexOf('.')) + ".png"));
+      
+      int background = histogramMax;
+      int range = backgroundRange;
+
+      //BufferedImage maskImage = filterImage;//blur4Image;
+      int maskSize = 4;
+
+      pixels = new int[maskSize * maskSize];
+
       ImageFilter maskFilter = new RGBImageFilter()
       {
-        int maskSize = 3;
-        int threshold = 0x90; 
-        int background = 0xffffffff;
-        BufferedImage maskImage = bluredImage;
-        int maskWidth = maskImage.getWidth();
-        int maskHeight = maskImage.getHeight();
-        int[] pixels = new int[maskSize * maskSize];
 
         @Override
         public int filterRGB(int x, int y, int rgb)
         {
-          boolean hasValue = false;
-          int value = 0xff;
-          
-          if (maskSize < 2)
+          int value;
+//          int minValue = 255;
+//          int maxValue = 0;
+          int s1 = 0;
+//          int s2 = 0;
+          int count = 0;
+
+          for(int i = 0; i < maskSize; i++)
           {
-            int color = maskImage.getRGB(x, y);
-            
-            if ((color & 0xff000000) >= 0xf0000000)
+            for(int j = 0; j < maskSize; j++)
             {
-              value = color & 0xff;
-              hasValue = true;
+              int px = x - maskSize / 2 + j;
+              int py = y - maskSize / 2 + i;
+              
+              if ((px >= 0) && (px < width) && (py >= 0) && (py < height))
+              {
+                rgb = filterImage.getRGB(px, py) & 0xff;
+                value = Math.abs(rgb - background) > range ? rgb : background;
+                
+                ++count;
+                s1 += value;
+//                s2 += value * value;
+//                
+//                if (minValue > value)
+//                {
+//                  minValue = value;
+//                }
+//
+//                if (maxValue < value)
+//                {
+//                  maxValue = value;
+//                }
+              }
             }
+          }
+          
+          if (count == 0)
+          {
+            value = background;
           }
           else
           {
-            int startX = x - maskSize / 2;
-            int startY = y - maskSize / 2;
-            int width = maskSize;
-            int height = maskSize;
-            boolean reset = false;
+            int mean = (int)((double)s1 / count);
+            //int stdev = (int)(Math.sqrt(s2 * count - s1 * s1) / count);
             
-            if (startX < 0)
-            {
-              width += startX;
-              startX = 0;
-              reset = true;
-            }
-            
-            if (startX + width > maskWidth)
-            {
-              width += maskWidth - (startX + width);
-              reset = true;
-            }
-
-            if (startY < 0)
-            {
-              height += startY;
-              startY = 0;
-              reset = true;
-            }
-
-            if (startY + height > maskHeight)
-            {
-              height += maskHeight - (startY + height);
-              reset = true;
-            }
-            
-            if (reset)
-            {
-              for(int i = 0; i < pixels.length; ++i)
-              {
-                pixels[i] = 0xff;
-              }
-            }
-            
-            maskImage.getRGB(
-              startX,
-              startY,
-              width,
-              height, 
-              pixels, 
-              0, 
-              maskSize);
-            
-            for(int color: pixels)
-            {
-              if ((color & 0xff000000) >= 0xf0000000)
-              {
-                hasValue = true;
-                
-                if (value > (color & 0xff))
-                {
-                  value = color & 0xff;
-                }
-              }
-            }
+            value = mean;
+            value = Math.abs(value - background) > range ? value : background;
           }
-          
-          return hasValue && (value <= threshold) && 
-            ((rgb & 0xff) <= threshold) ? 
-            rgb : background;
+                    
+          return 0xff000000 | value | (value << 8) | (value << 16);
         }
       };
-
+      
       PixelGrabber grabber = new PixelGrabber(
-        new FilteredImageSource(grayImage.getSource(), maskFilter), 
+        new FilteredImageSource(filterImage.getSource(), maskFilter), 
         0, 
         0, 
         -1, 
@@ -206,27 +319,21 @@ public class App2
       grabber.grabPixels();
 
       BufferedImage maskedImage = 
-        new BufferedImage(
-          grabber.getWidth(), 
-          grabber.getHeight(),
-          BufferedImage.TYPE_INT_ARGB);
+        new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
       
       maskedImage.setRGB(
         0, 
         0, 
-        grabber.getWidth(), 
-        grabber.getHeight(),
+        width, 
+        height,
         (int[])grabber.getPixels(), 
         0, 
         grabber.getWidth());
       
-      File maskedFile = new File(
-        folder, 
-        "masked-" + name.substring(0, name.lastIndexOf('.')) + ".png"); 
+      File maskedFile = new File(folder, "masked.png");
       
-      //ImageIO.write(maskedImage, "png", maskedFile);
-      saveImage(maskedImage, "png", maskedFile, 96);
-      
+      saveImage(maskedImage, "png", maskedFile, 225);
+
       maskedImages[index] = maskedFile.getAbsolutePath();
     }
 
@@ -235,13 +342,13 @@ public class App2
 //      return;
 //    }
     
-    maskedImages = new String[]
-    {
-      "C:\\temp\\images\\cheque1.jpg",
-      "C:\\temp\\images\\gray-cheque1.png",
-      "C:\\temp\\images\\blured-cheque1.png",
-      "C:\\temp\\images\\masked-cheque1.png"
-    };
+//    maskedImages = new String[]
+//    {
+////      "C:\\temp\\images\\cheque1.jpg",
+////      "C:\\temp\\images\\gray-cheque1.png",
+////      "C:\\temp\\images\\blured-cheque1.png",
+//      "C:\\temp\\images\\masked-cheque1.png"
+//    };
     
     String base = "C:\\projects\\git\\pdf-ocr\\";
     
