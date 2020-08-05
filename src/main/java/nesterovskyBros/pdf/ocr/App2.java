@@ -37,8 +37,13 @@ public class App2
     throws Exception
   {
     String[] images = 
-    { 
+    {
+      
+      //"C:\\temp\\images\\original-image.jpg", 
+      //"C:\\temp\\images\\sharpen1.jpg", 
+
       "C:\\temp\\images\\cheque1.jpg", 
+      "C:\\temp\\images\\cheque3.jpg", 
       //"C:\\temp\\images\\cheque2.jpg" 
     };
     
@@ -143,7 +148,7 @@ public class App2
 //          225);
 //      }
       
-      BufferedImage filterImage = grayImage;
+      BufferedImage filterImage0 = grayImage;
 
       // Histogram normalization.
       double backgroundPercent = .92;
@@ -155,7 +160,7 @@ public class App2
       // Read pixel intensities into histogram.
       for(int y = 0; y < height; y++) 
       {
-        filterImage.getRGB(0, y, width, 1, pixels, 0, width);
+        filterImage0.getRGB(0, y, width, 1, pixels, 0, width);
         
         for(int pixel: pixels)
         {
@@ -197,7 +202,9 @@ public class App2
           size += histogram[histogramMax - i];
         }
         
-        if (!hasRange || (size > backgroundSize))
+        if (!hasRange || 
+          (Math.abs(backgroundSize - size) > 
+            Math.abs(backgroundSize - histogramBackgroundSize)))
         {
           break;
         }
@@ -243,63 +250,64 @@ public class App2
       int range = backgroundRange;
 
       //BufferedImage maskImage = filterImage;//blur4Image;
-      int maskSize = 4;
+      int maskSize0 = 3;
 
-      pixels = new int[maskSize * maskSize];
-
-      ImageFilter maskFilter = new RGBImageFilter()
+      ImageFilter maskFilter0 = new RGBImageFilter()
       {
+        int[] pixels = new int[maskSize0 * maskSize0];
 
         @Override
         public int filterRGB(int x, int y, int rgb)
         {
+          rgb = rgb & 0xff;
+          
           int value;
-//          int minValue = 255;
-//          int maxValue = 0;
           int s1 = 0;
-//          int s2 = 0;
+          int s2 = 0;
           int count = 0;
 
-          for(int i = 0; i < maskSize; i++)
+          for(int i = 0; i < maskSize0; i++)
           {
-            for(int j = 0; j < maskSize; j++)
+            for(int j = 0; j < maskSize0; j++)
             {
-              int px = x - maskSize / 2 + j;
-              int py = y - maskSize / 2 + i;
+              int px = x - maskSize0 / 2 + j;
+              int py = y - maskSize0 / 2 + i;
               
               if ((px >= 0) && (px < width) && (py >= 0) && (py < height))
               {
-                rgb = filterImage.getRGB(px, py) & 0xff;
-                value = Math.abs(rgb - background) > range ? rgb : background;
+                value = filterImage0.getRGB(px, py) & 0xff;
+                pixels[i * maskSize0 + j] = value;
+                value = Math.abs(value - background) > range ? 
+                  value : background;
                 
                 ++count;
                 s1 += value;
-//                s2 += value * value;
-//                
-//                if (minValue > value)
-//                {
-//                  minValue = value;
-//                }
-//
-//                if (maxValue < value)
-//                {
-//                  maxValue = value;
-//                }
+                s2 += value * value;
               }
             }
           }
-          
+
           if (count == 0)
           {
             value = background;
           }
           else
           {
-            int mean = (int)((double)s1 / count);
-            //int stdev = (int)(Math.sqrt(s2 * count - s1 * s1) / count);
+            int mx = maskSize0 / 2;
+            int my = maskSize0 / 2;
             
-            value = mean;
-            value = Math.abs(value - background) > range ? value : background;
+//            rgb = 
+//              ( pixels[my * maskSize0 + mx] +
+//                pixels[(my - 1) * maskSize0 + mx] +
+//                pixels[(my + 1) * maskSize0 + mx]) / 3;
+            
+            double mean = (double)s1 / count;
+            double stdev = Math.sqrt(s2 * count - s1 * s1) / count;
+            
+            value = (int)mean;
+
+            value = (Math.abs(value - background) > range) &&
+              Math.abs(rgb - background) > range ? rgb : background;
           }
                     
           return 0xff000000 | value | (value << 8) | (value << 16);
@@ -307,6 +315,128 @@ public class App2
       };
       
       PixelGrabber grabber = new PixelGrabber(
+        new FilteredImageSource(filterImage0.getSource(), maskFilter0), 
+        0, 
+        0, 
+        -1, 
+        -1, 
+        null, 
+        0,
+        0);
+      
+      grabber.grabPixels();
+
+      BufferedImage maskedImage0 = 
+        new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+      
+      maskedImage0.setRGB(
+        0, 
+        0, 
+        width, 
+        height,
+        (int[])grabber.getPixels(), 
+        0, 
+        grabber.getWidth());
+     
+      saveImage(maskedImage0, "png", new File(folder, "masked0.png"), 225);
+      
+      BufferedImage filterImage = maskedImage0;
+      //BufferedImage filterImage = grayImage;// maskedImage0;
+      
+      int maskSize = 3;
+
+      ImageFilter maskFilter = new RGBImageFilter()
+      {
+        int[] pixels = new int[maskSize * maskSize];
+
+        @Override
+        public int filterRGB(int x, int y, int rgb)
+        {
+          rgb = rgb & 0xff;
+          rgb = Math.abs(rgb - background) > range ? rgb : background;
+
+          int value;
+
+          if (Math.abs(rgb - background) <= range)
+          {
+            value = background;
+          }
+          else
+          {
+            int s1 = 0;
+            int s2 = 0;
+            int count = 0;
+
+            for(int i = 0; i < maskSize; i++)
+            {
+              for(int j = 0; j < maskSize; j++)
+              {
+                int px = x - maskSize / 2 + j;
+                int py = y - maskSize / 2 + i;
+                
+                if ((px >= 0) && (px < width) && (py >= 0) && (py < height))
+                {
+                  value = filterImage.getRGB(px, py) & 0xff;
+                  value = Math.abs(value - background) > range ? 
+                    value : background;
+                  pixels[i * maskSize + j] = value;
+                  
+                  ++count;
+                  s1 += value;
+                  s2 += value * value;
+                }
+              }
+            }
+            
+            if (count <= 1)
+            {
+              value = background;
+              //value = rgb;
+            }
+            else
+            {
+              double mean = (double)s1 / count;
+              double stdev = Math.sqrt(s2 * count - s1 * s1) / count;
+              
+              int y0 = 0;
+              
+              for(int i = 0; i < maskSize; i++)
+              {
+                for(int j = 0; j < maskSize; j++)
+                {
+                  int px = x - maskSize / 2 + j;
+                  int py = y - maskSize / 2 + i;
+                  
+                  if ((px >= 0) && (px < width) && (py >= 0) && (py < height))
+                  {
+                    value = pixels[i * maskSize + j];
+                    
+                    if (value <= mean)
+                    {
+                      ++y0;
+                    }
+                  }
+                }
+              }
+              
+              value = rgb <= mean ? 
+                (int)Math.max(
+                  mean - stdev * Math.sqrt((count - y0) / (double)y0), 
+                  0) : 
+                (int)Math.min(
+                  mean + stdev * Math.sqrt((double)y0 / (count - y0)), 
+                  256);
+
+              value = Math.abs(value - background) <= range ? 
+                background : value;
+            }
+          }
+                    
+          return 0xff000000 | value | (value << 8) | (value << 16);
+        }
+      };
+      
+      grabber = new PixelGrabber(
         new FilteredImageSource(filterImage.getSource(), maskFilter), 
         0, 
         0, 
@@ -329,12 +459,86 @@ public class App2
         (int[])grabber.getPixels(), 
         0, 
         grabber.getWidth());
-      
+     
       File maskedFile = new File(folder, "masked.png");
       
       saveImage(maskedImage, "png", maskedFile, 225);
+      
+      int[][] edgeColors = new int[width][height];
+      int maxGradient = -1;
 
-      maskedImages[index] = maskedFile.getAbsolutePath();
+      for(int y = 1; y < height - 1; y++) 
+      {
+        for(int x = 1; x < width - 1; x++)
+        {
+          if (x == 1092 && y == 132)
+          {
+            x = x;
+          }
+
+          int val00 = maskedImage0.getRGB(x - 1, y - 1) & 0xff;
+            int val01 = maskedImage0.getRGB(x - 1, y) & 0xff;
+            int val02 = maskedImage0.getRGB(x - 1, y + 1) & 0xff;
+
+            int val10 = maskedImage0.getRGB(x, y - 1) & 0xff;
+            int val11 = maskedImage0.getRGB(x, y) & 0xff;
+            int val12 = maskedImage0.getRGB(x, y + 1) & 0xff;
+
+            int val20 = maskedImage0.getRGB(x + 1, y - 1) & 0xff;
+            int val21 = maskedImage0.getRGB(x + 1, y) & 0xff;
+            int val22 = maskedImage0.getRGB(x + 1, y + 1) & 0xff;
+
+            int gx =  ((-1 * val00) + (0 * val01) + (1 * val02)) 
+                    + ((-2 * val10) + (0 * val11) + (2 * val12))
+                    + ((-1 * val20) + (0 * val21) + (1 * val22));
+
+            int gy =  ((-1 * val00) + (-2 * val01) + (-1 * val02))
+                    + ((0 * val10) + (0 * val11) + (0 * val12))
+                    + ((1 * val20) + (2 * val21) + (1 * val22));
+
+            double gval = Math.sqrt((gx * gx) + (gy * gy));
+            int g = (int) gval;
+
+            if(maxGradient < g) 
+            {
+              maxGradient = g;
+            }
+
+            edgeColors[x][y] = g;
+          }
+      }
+
+      scale = 255.0 / maxGradient;
+
+      BufferedImage edgeImage = 
+        new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+
+      for(int y = 0; y < height; y++) 
+      {
+        for(int x = 0; x < width; x++) 
+        {
+          int edgeColor = edgeColors[x][y];
+          int maskColor = maskedImage0.getRGB(x, y) & 0xff;
+          
+          if (x == 1092 && y == 132)
+          {
+            edgeColor = edgeColor;
+          }
+         
+          edgeColor = (int)(edgeColor * scale);
+          //edgeColor = (int)((1.0 - (double)edgeColor / maxGradient) * maskColor); 
+          edgeColor = 0xff000000 | (edgeColor << 16) | (edgeColor << 8) | edgeColor;
+
+          edgeImage.setRGB(x, y, edgeColor);
+        }
+      }
+
+      saveImage(edgeImage, "png", new File(folder, "edge.png"), 225);
+
+      maskedImages[index] = 
+          // new File(folder, "edge.png").getAbsolutePath();
+          //new File(folder, "masked0.png").getAbsolutePath();
+          maskedFile.getAbsolutePath();
     }
 
 //    if (true)
